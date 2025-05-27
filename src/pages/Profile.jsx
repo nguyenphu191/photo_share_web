@@ -2,7 +2,6 @@ import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import Comment from '../components/Comment';
 import { useNavigate } from 'react-router-dom';
-import { v4 as uuidv4 } from 'uuid';
 
 const Profile = () => {
     // State lưu thông tin user từ server (có thể khác với localStorage)
@@ -16,15 +15,20 @@ const Profile = () => {
         user: true,      // Loading khi fetch user data
         photos: true,    // Loading khi fetch photos
         upload: false,   // Loading khi upload photo
-        delete: null     // Loading khi delete photo (lưu photoId đang delete)
+        delete: null,    // Loading khi delete photo (lưu photoId đang delete)
+        avatar: false    // Loading khi upload avatar
     });
     
     // State quản lý lỗi
     const [error, setError] = useState('');
     
-    // State quản lý file upload
+    // State quản lý file upload cho photos
     const [selectedFile, setSelectedFile] = useState(null);
     const [previewUrl, setPreviewUrl] = useState('');
+    
+    // State quản lý file upload cho avatar
+    const [selectedAvatar, setSelectedAvatar] = useState(null);
+    const [avatarPreviewUrl, setAvatarPreviewUrl] = useState('');
     
     // State quản lý comments cho từng photo (object với key là photoId)
     const [newComments, setNewComments] = useState({});
@@ -63,6 +67,9 @@ const Profile = () => {
             const response = await axios.get(`http://localhost:8000/api/user/${userLogin._id}`);
             setUser(response.data);
             
+            // Cập nhật user trong localStorage với thông tin mới từ server
+            localStorage.setItem('user', JSON.stringify(response.data));
+            
         } catch (error) {
             console.error('Lỗi khi fetch user data:', error);
             setError('Không thể tải thông tin người dùng. Vui lòng thử lại.');
@@ -83,8 +90,12 @@ const Profile = () => {
             
         } catch (error) {
             console.error('Lỗi khi fetch photos:', error);
-            setError('Không thể tải danh sách ảnh. Vui lòng thử lại.');
-            setPhotoList([]); // Set empty array nếu lỗi
+            if (error.response?.status === 404) {
+                setPhotoList([]); // Chưa có ảnh nào
+            } else {
+                setError('Không thể tải danh sách ảnh. Vui lòng thử lại.');
+                setPhotoList([]); // Set empty array nếu lỗi
+            }
         } finally {
             setLoading(prev => ({ ...prev, photos: false }));
         }
@@ -98,8 +109,103 @@ const Profile = () => {
         }
     }, [fetchUserData, fetchPhotos, userLogin?._id]);
 
-    // === FILE HANDLING ===
-    // Xử lý khi user chọn file
+    // Xử lý khi user chọn avatar file
+    const handleAvatarChange = useCallback((event) => {
+        const file = event.target.files[0];
+        
+        // Kiểm tra có file được chọn không
+        if (!file) {
+            return;
+        }
+
+        // Validate file type (chỉ cho phép ảnh)
+        if (!file.type.startsWith('image/')) {
+            setError('Vui lòng chọn file ảnh (JPG, PNG, GIF, ...)');
+            return;
+        }
+
+        // Validate file size (giới hạn 5MB)
+        const maxSize = 5 * 1024 * 1024; // 5MB
+        if (file.size > maxSize) {
+            setError('Kích thước file không được vượt quá 5MB');
+            return;
+        }
+
+        // Clear error và set file
+        setError('');
+        setSelectedAvatar(file);
+        
+        // Tạo preview URL cho ảnh
+        const objectUrl = URL.createObjectURL(file);
+        setAvatarPreviewUrl(objectUrl);
+    }, []);
+
+    // Xử lý upload avatar
+    const handleAvatarUpload = useCallback(async () => {
+        // Kiểm tra điều kiện upload
+        if (!selectedAvatar || !userLogin) {
+            setError('Vui lòng chọn ảnh đại diện để upload');
+            return;
+        }
+
+        try {
+            setLoading(prev => ({ ...prev, avatar: true }));
+            setError('');
+
+            // Lấy token từ localStorage
+            const token = localStorage.getItem('token');
+            if (!token) {
+                setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+                navigate('/login');
+                return;
+            }
+
+            // Tạo FormData để gửi file
+            const formData = new FormData();
+            formData.append('avatar', selectedAvatar);
+
+            // Gửi request upload
+            const response = await axios.post(
+                'http://localhost:8000/api/user/upload-avatar',
+                formData,
+                {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                        'Authorization': `Bearer ${token}`
+                    }
+                }
+            );
+
+            // Cập nhật user state với avatar mới
+            setUser(prev => ({
+                ...prev,
+                avatar: response.data.avatar
+            }));
+
+            // Cập nhật localStorage
+            const updatedUser = { ...userLogin, avatar: response.data.avatar };
+            localStorage.setItem('user', JSON.stringify(updatedUser));
+            
+            // Reset form upload
+            setSelectedAvatar(null);
+            setAvatarPreviewUrl('');
+            
+            // Clear file input
+            const fileInput = document.querySelector('input[name="avatar"]');
+            if (fileInput) {
+                fileInput.value = '';
+            }
+
+        } catch (error) {
+            console.error('Lỗi khi upload avatar:', error);
+            setError('Không thể cập nhật ảnh đại diện. Vui lòng thử lại.');
+        } finally {
+            setLoading(prev => ({ ...prev, avatar: false }));
+        }
+    }, [selectedAvatar, userLogin, navigate]);
+
+    // === PHOTO FILE HANDLING ===
+    // Xử lý khi user chọn file photo
     const handleFileChange = useCallback((event) => {
         const file = event.target.files[0];
         
@@ -136,8 +242,11 @@ const Profile = () => {
             if (previewUrl) {
                 URL.revokeObjectURL(previewUrl);
             }
+            if (avatarPreviewUrl) {
+                URL.revokeObjectURL(avatarPreviewUrl);
+            }
         };
-    }, [previewUrl]);
+    }, [previewUrl, avatarPreviewUrl]);
 
     // Xử lý upload photo
     const handlePhotoUpload = useCallback(async () => {
@@ -153,11 +262,8 @@ const Profile = () => {
 
             // Tạo FormData để gửi file
             const formData = new FormData();
-            formData.append('_id', uuidv4()); // Tạo ID unique cho photo
             formData.append('file', selectedFile);
             formData.append('user_id', userLogin._id);
-            formData.append('date_time', new Date().toISOString());
-            formData.append('comments', JSON.stringify([])); // Khởi tạo comments rỗng
 
             // Gửi request upload
             const response = await axios.post(
@@ -178,7 +284,7 @@ const Profile = () => {
             setPreviewUrl('');
             
             // Clear file input
-            const fileInput = document.querySelector('input[type="file"]');
+            const fileInput = document.querySelector('input[type="file"]:not([name="avatar"])');
             if (fileInput) {
                 fileInput.value = '';
             }
@@ -242,11 +348,8 @@ const Profile = () => {
         try {
             // Tạo object comment mới
             const newComment = {
-                _id: uuidv4(),
-                userId: userLogin._id,
                 comment: commentText,
-                date_time: new Date().toISOString(),
-                photo_id: photoId
+                userId: userLogin._id
             };
 
             // Gọi API post comment
@@ -261,7 +364,17 @@ const Profile = () => {
                     if (photo._id === photoId) {
                         return {
                             ...photo,
-                            comments: [...(photo.comments || []), response.data]
+                            comments: [...(photo.comments || []), {
+                                _id: Date.now().toString(), // Temporary ID
+                                comment: commentText,
+                                date_time: new Date().toISOString(),
+                                user_id: userLogin._id,
+                                user: {
+                                    _id: userLogin._id,
+                                    first_name: userLogin.first_name,
+                                    last_name: userLogin.last_name
+                                }
+                            }]
                         };
                     }
                     return photo;
@@ -280,7 +393,6 @@ const Profile = () => {
         }
     }, [newComments, userLogin]);
 
-    // === UTILITY FUNCTIONS ===
     // Format datetime cho hiển thị
     const formatDateTime = useCallback((dateTimeString) => {
         try {
@@ -299,6 +411,9 @@ const Profile = () => {
 
     // Tạo avatar URL cho user
     const getUserAvatarUrl = useCallback((user) => {
+        if (user?.avatar) {
+            return `http://localhost:8000${user.avatar}`;
+        }
         if (!user?.last_name) {
             return '/images/default.jpg';
         }
@@ -339,28 +454,71 @@ const Profile = () => {
                             <h2 className="page-title">Trang cá nhân</h2>
                             
                             <div className="user-profile">
-                                <img 
-                                    src={getUserAvatarUrl(userLogin)}
-                                    alt="Avatar"
-                                    className="user-avatar"
-                                />
+                                <div className="avatar-container">
+                                    <img 
+                                        src={getUserAvatarUrl(user || userLogin)}
+                                        alt="Avatar"
+                                        className="user-avatar"
+                                    />
+                                    
+                                    {/* Avatar Upload Controls */}
+                                    <div className="avatar-upload-controls">
+                                        <label className="avatar-upload-label">
+                                            <input
+                                                type="file"
+                                                name="avatar"
+                                                accept="image/*"
+                                                onChange={handleAvatarChange}
+                                                className="avatar-input-hidden"
+                                            />
+                                            <div className="avatar-upload-btn">
+                                                📷 Đổi ảnh đại diện
+                                            </div>
+                                        </label>
+                                        
+                                        {/* Avatar Preview */}
+                                        {avatarPreviewUrl && (
+                                            <div className="avatar-preview-container">
+                                                <img 
+                                                    src={avatarPreviewUrl}
+                                                    alt="Preview"
+                                                    className="avatar-preview"
+                                                />
+                                                <button
+                                                    onClick={handleAvatarUpload}
+                                                    disabled={!selectedAvatar || loading.avatar}
+                                                    className={`avatar-save-btn ${(!selectedAvatar || loading.avatar) ? 'disabled' : ''}`}
+                                                >
+                                                    {loading.avatar ? (
+                                                        <>
+                                                            <div className="spinner"></div>
+                                                            Đang lưu...
+                                                        </>
+                                                    ) : (
+                                                        'Lưu ảnh đại diện'
+                                                    )}
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
                                 
                                 <div className="user-details">
                                     <div className="user-field">
                                         <label>Tên:</label>
-                                        <span>{userLogin.first_name}</span>
+                                        <span>{(user || userLogin).first_name}</span>
                                     </div>
                                     <div className="user-field">
                                         <label>Họ:</label>
-                                        <span>{userLogin.last_name}</span>
+                                        <span>{(user || userLogin).last_name}</span>
                                     </div>
                                     <div className="user-field">
                                         <label>Địa chỉ:</label>
-                                        <span>{userLogin.location}</span>
+                                        <span>{(user || userLogin).location}</span>
                                     </div>
                                     <div className="user-field">
                                         <label>Nghề nghiệp:</label>
-                                        <span>{userLogin.occupation}</span>
+                                        <span>{(user || userLogin).occupation}</span>
                                     </div>
                                 </div>
                             </div>
@@ -473,7 +631,7 @@ const Profile = () => {
 
                                     {/* Photo Image */}
                                     <img 
-                                        src={photo.file_name}
+                                        src={`http://localhost:8000${photo.file_name}`}
                                         alt="User photo"
                                         className="photo-image"
                                     />

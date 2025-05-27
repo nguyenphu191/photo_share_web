@@ -150,12 +150,15 @@ const UserList = ({ onSelectUser, selectedUser, onError, onLoadingChange, curren
     }, [users, loggedUser, searchTerm]);
 
     // Tạo URL avatar cho user
-    const getUserAvatarUrl = useCallback((user) => {
-        if (!user?.last_name) {
-            return '/images/default.jpg';
-        }
-        return `/images/${user.last_name.toLowerCase()}.jpg`;
-    }, []);
+   const getUserAvatarUrl = useCallback((user) => {
+           if (user?.avatar) {
+               return `http://localhost:8000${user.avatar}`;
+           }
+           if (!user?.last_name) {
+               return '/images/default.jpg';
+           }
+           return `/images/${user.last_name.toLowerCase()}.jpg`;
+       }, []);
 
     // Kiểm tra user có đang được select không
     const isUserSelected = useCallback((userId) => {

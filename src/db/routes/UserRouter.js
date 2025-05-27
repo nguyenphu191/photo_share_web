@@ -1,13 +1,65 @@
 const express = require("express");
 const User = require("../models/UserModel.js");
 const router = express.Router();
-const Photo = require("../models/PhotoModel.js");
 const jwtAuth = require("../middleware/auth.js");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+
+// Tạo thư mục uploads nếu chưa tồn tại
+const createUploadsDir = () => {
+  const uploadsDir = path.join(__dirname, "..", "uploads");
+  const photosDir = path.join(uploadsDir, "photos");
+  const avatarsDir = path.join(uploadsDir, "avatars");
+  
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  if (!fs.existsSync(photosDir)) {
+    fs.mkdirSync(photosDir, { recursive: true });
+  }
+  if (!fs.existsSync(avatarsDir)) {
+    fs.mkdirSync(avatarsDir, { recursive: true });
+  }
+};
+
+// Tạo thư mục khi khởi động
+createUploadsDir();
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, path.join(__dirname, "..", "uploads", "avatars"));
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix =
+      Date.now() +
+      "-" +
+      Math.round(Math.random() * 1e9) +
+      path.extname(file.originalname);
+    cb(null, "avatar-" + uniqueSuffix);
+  },
+});
+
+const upload = multer({ 
+  storage: storage,
+  fileFilter: function (req, file, cb) {
+    // Chỉ cho phép upload ảnh
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Chỉ cho phép upload file ảnh!'), false);
+    }
+  },
+  limits: {
+    fileSize: 5 * 1024 * 1024 // Giới hạn 5MB
+  }
+});
+
 router.post("/", async (request, response) => {});
 
 router.get("/list", async (req, res) => {
   try {
-    const users = await User.find({}, "_id first_name last_name location description occupation login_name ");
+    const users = await User.find({}, "_id first_name last_name location description occupation login_name avatar");
     res.send(users);
   } catch (error) {
     res.status(500).send({ error: "Không thể truy xuất người dùng" });
@@ -18,7 +70,7 @@ router.get("/:id", async (req, res) => {
   try {
     const user = await User.findById(
       req.params.id,
-      "_id first_name last_name location description occupation login_name",
+      "_id first_name last_name location description occupation login_name avatar",
     );
     if (!user) {
       return res.status(400).send({ error: "Không tìm thấy người dùng" });
@@ -50,5 +102,53 @@ router.post("/update", jwtAuth, async (req, res) => {
     res.status(500).send({ error: "Internal server error" });
   }
 });
+
+router.post('/upload-avatar', jwtAuth, upload.single('avatar'), async (req, res) => {
+  console.log('Upload avatar request:', req.file, req.userId);
+
+  try {
+    if (!req.file) {
+      return res.status(400).send({ error: "Không có file nào được tải lên" });
+    }
+
+    const userId = req.userId;
+    const avatarPath = `/uploads/avatars/${req.file.filename}`;
+
+    // 📌 Lấy thông tin user hiện tại để kiểm tra và xóa ảnh cũ nếu có
+    const currentUser = await User.findById(userId);
+
+    if (currentUser && currentUser.avatar) {
+      const oldAvatarPath = path.join(__dirname, "..", currentUser.avatar);
+
+      // Kiểm tra file tồn tại và xóa
+      if (fs.existsSync(oldAvatarPath)) {
+        fs.unlinkSync(oldAvatarPath);
+        console.log("Đã xóa ảnh cũ:", oldAvatarPath);
+      }
+    }
+
+    // Cập nhật avatar trong database
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { avatar: avatarPath },
+      { new: true }
+    ).select('-password');
+
+    if (!updatedUser) {
+      return res.status(404).send({ error: "Không tìm thấy người dùng" });
+    }
+
+    res.status(200).send({
+      message: "Cập nhật ảnh đại diện thành công",
+      avatar: avatarPath,
+      user: updatedUser
+    });
+
+  } catch (error) {
+    console.error('Lỗi upload avatar:', error);
+    res.status(500).send({ error: "Không thể cập nhật ảnh đại diện" });
+  }
+});
+
 
 module.exports = router;
