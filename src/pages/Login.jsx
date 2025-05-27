@@ -35,7 +35,8 @@ const Login = () => {
         const checkExistingLogin = () => {
             try {
                 const userString = localStorage.getItem('user');
-                if (userString) {
+                const token = localStorage.getItem('token');
+                if (userString && token) {
                     const user = JSON.parse(userString);
                     if (user && user._id) {
                         navigate('/profile', { replace: true });
@@ -44,6 +45,7 @@ const Login = () => {
             } catch (error) {
                 // Nếu có lỗi parse thì clear localStorage
                 localStorage.removeItem('user');
+                localStorage.removeItem('token');
             }
         };
 
@@ -183,7 +185,7 @@ const Login = () => {
                 const status = error.response.status;
                 const message = error.response.data?.message || 'Đăng nhập thất bại';
                 
-                if (status === 401) {
+                if (status === 401 || status === 400) {
                     throw new Error('Tên đăng nhập hoặc mật khẩu không đúng');
                 } else if (status === 429) {
                     throw new Error('Quá nhiều lần thử. Vui lòng thử lại sau');
@@ -226,13 +228,14 @@ const Login = () => {
             // Gọi API đăng nhập
             const response = await loginAPI(formData);
             
-            // Kiểm tra response có user data không
-            if (!response.user) {
+            // Kiểm tra response có user data và token không
+            if (!response.user || !response.token) {
                 throw new Error('Phản hồi từ máy chủ không hợp lệ');
             }
 
-            // Lưu thông tin user vào localStorage
+            // Lưu thông tin user và token vào localStorage
             localStorage.setItem('user', JSON.stringify(response.user));
+            localStorage.setItem('token', response.token);
             
             // Hiển thị thông báo thành công
             setMessage({

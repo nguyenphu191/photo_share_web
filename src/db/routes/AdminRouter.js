@@ -4,7 +4,7 @@ const bcrypt = require("bcrypt");
 const User = require("../models/UserModel.js");
 const router = express.Router();
 
-const JWT_SECRET = "your-secret-key";
+const JWT_SECRET = "phu@toapp_secret";
 const SALT_ROUNDS = 10;
 
 router.post("/login", async (req, res) => {
@@ -17,11 +17,18 @@ router.post("/login", async (req, res) => {
     }
 
     const token = jwt.sign({ userId: user._id }, JWT_SECRET, {
-      expiresIn: "1h",
+      expiresIn: "24h", // Token hết hạn sau 24 giờ
     });
 
-    res.send({ token, user: { _id: user._id, first_name: user.first_name } });
+    // Trả về user data đầy đủ hơn (không bao gồm password)
+    const { password: pwd, ...userData } = user.toObject();
+
+    res.send({ 
+      token, 
+      user: userData
+    });
   } catch (err) {
+    console.error('Login error:', err);
     res.status(500).send({ error: "Internal server error" });
   }
 });
@@ -40,7 +47,7 @@ router.post("/register", async (req, res) => {
   try {
     const existingUser = await User.findOne({ login_name });
     if (existingUser) {
-      return res.status(400).send({ error: "User already exists" });
+      return res.status(409).send({ error: "User already exists" });
     }
 
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
@@ -53,11 +60,14 @@ router.post("/register", async (req, res) => {
       location,
       description,
       occupation,
+      avatar: '' // Khởi tạo avatar rỗng
     });
+    
     await newUser.save();
 
     res.status(201).send({ message: "User registered successfully" });
   } catch (err) {
+    console.error('Register error:', err);
     res.status(500).send({ error: "Internal server error" });
   }
 });
