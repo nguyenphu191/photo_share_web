@@ -168,5 +168,39 @@ router.post('/upload-avatar', jwtAuth, upload.single('avatar'), async (req, res)
   }
 });
 
+router.get("/available", jwtAuth, async (req, res) => {
+  try {
+    const userId = req.userId;
+    
+    // Lấy danh sách friend IDs và pending requests
+    const friends = await Friend.find({
+      $or: [
+        { requester: userId },
+        { recipient: userId }
+      ]
+    });
 
+    const excludeIds = [userId]; // Exclude self
+    
+    // Add all friends and pending requests to exclude list
+    friends.forEach(friend => {
+      if (friend.requester.toString() !== userId) {
+        excludeIds.push(friend.requester);
+      }
+      if (friend.recipient.toString() !== userId) {
+        excludeIds.push(friend.recipient);
+      }
+    });
+
+    // Lấy users không nằm trong exclude list
+    const availableUsers = await User.find({ 
+      _id: { $nin: excludeIds } 
+    }, "_id first_name last_name location description occupation login_name avatar");
+    
+    res.send(availableUsers);
+  } catch (error) {
+    console.error('Error fetching available users:', error);
+    res.status(500).send({ error: "Không thể truy xuất người dùng" });
+  }
+});
 module.exports = router;
