@@ -1,27 +1,19 @@
+
 import React, { useEffect, useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const UserList = ({ onSelectUser, selectedUser, onError, onLoadingChange, currentUser }) => {
     // === KHAI BÁO STATE ===
-    // State lưu danh sách tất cả users từ server
     const [users, setUsers] = useState([]);
-    
-    // State quản lý loading khi fetch users
     const [loading, setLoading] = useState(true);
-    
-    // State quản lý error local cho component này
     const [error, setError] = useState('');
-    
-    // State lưu thông tin user đang đăng nhập từ localStorage
     const [loggedUser, setLoggedUser] = useState(null);
     
-    // State quản lý search (có thể thêm sau)
-    const [searchTerm, setSearchTerm] = useState('');
+    const navigate = useNavigate();
 
-    // Effect để lấy user từ localStorage và fetch danh sách users
+    // Effect để lấy user từ localStorage và fetch danh sách friends
     useEffect(() => {
-        // Lấy thông tin user đã đăng nhập từ localStorage
         const getUserFromStorage = () => {
             try {
                 const userString = localStorage.getItem('user');
@@ -42,9 +34,9 @@ const UserList = ({ onSelectUser, selectedUser, onError, onLoadingChange, curren
 
         const user = getUserFromStorage();
         
-        // Fetch danh sách users
+        // Fetch danh sách friends
         if (user) {
-            fetchUsers();
+            fetchFriends();
         }
     }, [onError]);
 
@@ -55,44 +47,63 @@ const UserList = ({ onSelectUser, selectedUser, onError, onLoadingChange, curren
         }
     }, [loading, onLoadingChange]);
 
-    // Hàm fetch danh sách users từ server
-    const fetchUsers = useCallback(async () => {
+    // Hàm fetch danh sách friends từ server
+    const fetchFriends = useCallback(async () => {
         try {
             setLoading(true);
             setError('');
 
-            const response = await axios.get(
-                'http://localhost:8000/api/user/list',
-                {
-                    timeout: 10000, // Timeout 10 giây
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
+            const token = localStorage.getItem('token');
+            if (!token) {
+                setError('Bạn cần đăng nhập để xem danh sách bạn bè');
+                setUsers([]);
+                return;
+            }
+
+            console.log('📡 Fetching friends list...');
+
+            const response = await axios.get('http://localhost:8000/api/friend/list', {
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 10000
+            });
+
+            console.log('✅ Friends response:', response.data);
 
             // Kiểm tra response data
             if (response.data && Array.isArray(response.data)) {
                 setUsers(response.data);
+                console.log(`📊 Loaded ${response.data.length} friends`);
             } else {
-                throw new Error('Dữ liệu không hợp lệ từ server');
+                setUsers([]);
+                console.log('📭 No friends data received');
             }
 
         } catch (error) {
-            console.error('Lỗi khi fetch users:', error);
+            console.error('❌ Lỗi khi fetch friends:', error);
             
-            let errorMessage = 'Không thể tải danh sách người dùng';
+            let errorMessage = 'Không thể tải danh sách bạn bè';
             
-            if (error.code === 'NETWORK_ERROR') {
+            if (error.response?.status === 401) {
+                errorMessage = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+                localStorage.removeItem('user');
+                localStorage.removeItem('token');
+                navigate('/login');
+            } else if (error.response?.status === 404) {
+                // 404 có nghĩa là chưa có friends nào - không phải lỗi
+                setUsers([]);
+                setError('');
+                return;
+            } else if (error.code === 'NETWORK_ERROR') {
                 errorMessage = 'Lỗi kết nối mạng. Vui lòng kiểm tra internet';
             } else if (error.response?.status === 500) {
                 errorMessage = 'Lỗi máy chủ. Vui lòng thử lại sau';
-            } else if (error.response?.status === 404) {
-                errorMessage = 'Không tìm thấy danh sách người dùng';
             }
             
             setError(errorMessage);
-            setUsers([]); // Set empty array để tránh lỗi map
+            setUsers([]);
             
             // Thông báo error lên parent component
             if (onError) {
@@ -101,22 +112,19 @@ const UserList = ({ onSelectUser, selectedUser, onError, onLoadingChange, curren
         } finally {
             setLoading(false);
         }
-    }, [onError]);
+    }, [onError, navigate]);
 
     // Xử lý khi user click vào một user trong danh sách
     const handleUserSelect = useCallback((userId, event) => {
-        // Ngăn default action của Link
         if (event) {
             event.preventDefault();
         }
 
-        // Kiểm tra userId hợp lệ
         if (!userId) {
             console.error('User ID không hợp lệ');
             return;
         }
 
-        // Gọi callback để thông báo lên parent component
         if (onSelectUser) {
             onSelectUser(userId);
         }
@@ -124,65 +132,67 @@ const UserList = ({ onSelectUser, selectedUser, onError, onLoadingChange, curren
 
     // Xử lý retry khi có lỗi
     const handleRetry = useCallback(() => {
-        fetchUsers();
-    }, [fetchUsers]);
+        fetchFriends();
+    }, [fetchFriends]);
 
-    // Lọc users để không hiển thị user hiện tại và filter theo search
-    const getFilteredUsers = useCallback(() => {
-        let filteredUsers = users;
+    // Xử lý chuyển đến trang thêm bạn
+    const handleGoToAddFriends = useCallback(() => {
+        navigate('/add-friends');
+    }, [navigate]);
 
-        // Loại bỏ user hiện tại khỏi danh sách
-        if (loggedUser?._id) {
-            filteredUsers = filteredUsers.filter(user => user._id !== loggedUser._id);
+    // Xử lý refresh friends list (gọi từ parent khi có friend request mới)
+    const refreshFriends = useCallback(() => {
+        fetchFriends();
+    }, [fetchFriends]);
+
+    // Expose refresh function to parent
+    useEffect(() => {
+        if (window.userListRefresh) {
+            window.userListRefresh = refreshFriends;
         }
-
-        // Filter theo search term (nếu có)
-        if (searchTerm.trim()) {
-            const searchLower = searchTerm.toLowerCase().trim();
-            filteredUsers = filteredUsers.filter(user => 
-                user.first_name?.toLowerCase().includes(searchLower) ||
-                user.last_name?.toLowerCase().includes(searchLower) ||
-                user.login_name?.toLowerCase().includes(searchLower)
-            );
-        }
-
-        return filteredUsers;
-    }, [users, loggedUser, searchTerm]);
-
-    // Tạo URL avatar cho user
-   const getUserAvatarUrl = useCallback((user) => {
-           if (user?.avatar) {
-               return `http://localhost:8000${user.avatar}`;
-           }
-           if (!user?.last_name) {
-               return '/images/default.jpg';
-           }
-           return `/images/${user.last_name.toLowerCase()}.jpg`;
-       }, []);
+    }, [refreshFriends]);
 
     // Kiểm tra user có đang được select không
     const isUserSelected = useCallback((userId) => {
         return selectedUser === userId;
     }, [selectedUser]);
 
-    const filteredUsers = getFilteredUsers();
+    // Tạo URL avatar cho user
+    const getUserAvatarUrl = useCallback((user) => {
+        if (user?.avatar) {
+            return `http://localhost:8000${user.avatar}`;
+        }
+        if (!user?.last_name) {
+            return '/images/default.jpg';
+        }
+        return `/images/${user.last_name.toLowerCase()}.jpg`;
+    }, []);
 
     return (
         <div className="userhome">
             <div className="userList">
                 {/* Header */}
-                <h2>Danh sách người dùng</h2>
+                <div className="userlist-header">
+                    <h2>Bạn bè ({users.length})</h2>
+                    <button 
+                        className="refresh-btn"
+                        onClick={handleRetry}
+                        disabled={loading}
+                        title="Làm mới danh sách"
+                    >
+                        🔄
+                    </button>
+                </div>
 
-               
                 {loading ? (
                     /* Loading State */
-                    <div className="loading-users">
+                    <div className="loading-friends">
                         <div className="loading-spinner"></div>
-                        <p>Đang tải danh sách người dùng...</p>
+                        <p>Đang tải danh sách bạn bè...</p>
                     </div>
                 ) : error ? (
                     /* Error State */
-                    <div className="empty-users">
+                    <div className="empty-friends">
                         <div className="empty-icon">❌</div>
                         <h3>Có lỗi xảy ra</h3>
                         <p>{error}</p>
@@ -193,60 +203,89 @@ const UserList = ({ onSelectUser, selectedUser, onError, onLoadingChange, curren
                             Thử lại
                         </button>
                     </div>
-                ) : filteredUsers.length === 0 ? (
-                    /* Empty State */
-                    <div className="empty-users">
+                ) : users.length === 0 ? (
+                    /* Empty State - No Friends */
+                    <div className="empty-friends">
                         <div className="empty-icon">👥</div>
-                        <h3>Không có người dùng nào</h3>
-                        <p>
-                            {searchTerm ? 
-                                'Không tìm thấy người dùng phù hợp với từ khóa tìm kiếm' : 
-                                'Hiện tại chưa có người dùng nào khác trong hệ thống'
-                            }
-                        </p>
-                        {searchTerm && (
+                        <h3>Chưa có bạn bè nào</h3>
+                        <p>Hãy bắt đầu kết bạn để xem và chia sẻ ảnh với mọi người!</p>
+                        
+                        <div className="empty-actions">
                             <button 
-                                onClick={() => setSearchTerm('')}
-                                className="clear-search-btn"
+                                className="add-friends-btn primary"
+                                onClick={handleGoToAddFriends}
                             >
-                                Xóa tìm kiếm
+                                👥 Tìm bạn bè
                             </button>
-                        )}
+                            
+                            <div className="empty-tips">
+                                <p className="tip-title">💡 Cách kết bạn:</p>
+                                <ul className="tip-list">
+                                    <li>🔗 Chia sẻ link của bạn</li>
+                                    <li>📷 Quét mã QR của bạn bè</li>
+                                    <li>🔍 Tìm kiếm theo tên</li>
+                                </ul>
+                            </div>
+                        </div>
                     </div>
                 ) : (
-                    /* Users List */
-                    <ul>
-                        {filteredUsers.map((user) => (
-                            <li 
-                                key={user._id} 
-                                className={`user ${isUserSelected(user._id) ? 'selected' : ''}`}
-                                onClick={(e) => handleUserSelect(user._id, e)}
+                    /* Friends List */
+                    <div className="friends-content">
+                        {/* Quick Add Friends Button */}
+                        <div className="quick-add-section">
+                            <button 
+                                className="quick-add-btn"
+                                onClick={handleGoToAddFriends}
+                                title="Thêm bạn mới"
                             >
-                                <Link 
-                                    to={`/user/${user._id}`}
-                                    onClick={(e) => e.preventDefault()} // Prevent navigation, chỉ dùng để select
+                                ➕ Thêm bạn
+                            </button>
+                        </div>
+
+                        {/* Friends Grid */}
+                        <ul className="friends-list">
+                            {users.map((user) => (
+                                <li 
+                                    key={user._id} 
+                                    className={`user friend-item ${isUserSelected(user._id) ? 'selected' : ''}`}
+                                    onClick={(e) => handleUserSelect(user._id, e)}
                                 >
-                                    <img 
-                                        src={getUserAvatarUrl(user)}
-                                        alt={`Avatar của ${user.first_name} ${user.last_name}`}
-                                        onError={(e) => {
-                                            e.target.src = '/images/default.jpg';
-                                        }}
-                                    />
-                                    <div className="userDetails">
-                                        <span>
-                                            {user.first_name} {user.last_name}
-                                        </span>
-                                        {user.occupation && (
-                                            <small className="user-occupation">
-                                                {user.occupation}
-                                            </small>
-                                        )}
-                                    </div>
-                                </Link>
-                            </li>
-                        ))}
-                    </ul>
+                                    <Link 
+                                        to={`/user/${user._id}`}
+                                        onClick={(e) => e.preventDefault()}
+                                    >
+                                        <img 
+                                            src={getUserAvatarUrl(user)}
+                                            alt={`Avatar của ${user.first_name} ${user.last_name}`}
+                                            onError={(e) => {
+                                                e.target.src = '/images/default.jpg';
+                                            }}
+                                        />
+                                        <div className="userDetails">
+                                            <span className="user-name">
+                                                {user.first_name} {user.last_name}
+                                            </span>
+                                            {user.occupation && (
+                                                <small className="user-occupation">
+                                                    {user.occupation}
+                                                </small>
+                                            )}
+                                            {user.location && (
+                                                <small className="user-location">
+                                                    📍 {user.location}
+                                                </small>
+                                            )}
+                                        </div>
+                                        
+                                        {/* Friend Status Indicator */}
+                                        <div className="friend-status">
+                                            <span className="status-badge">👥</span>
+                                        </div>
+                                    </Link>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
                 )}
             </div>
         </div>
