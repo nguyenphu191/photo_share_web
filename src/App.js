@@ -3,6 +3,7 @@ import Login from "./pages/Login";
 import Home from "./pages/Home";
 import TopBar from "./components/TopBar";
 import Profile from "./pages/Profile";
+import AddFriend from "./pages/AddFriend";
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 
 import "./styles.css";
@@ -16,6 +17,7 @@ function App() {
         <Route path="/home" element={<Home/>} />
         <Route path="/profile" element={<Profile/>} />
         <Route path="/register" element={<Register/>} />
+        <Route path="/add-friend/:userId" element={<AddFriend/>} />
 
       </Routes>
     </Router>

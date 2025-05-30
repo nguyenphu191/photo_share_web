@@ -57,12 +57,30 @@ const upload = multer({
 
 router.post("/", async (request, response) => {});
 
-router.get("/list", async (req, res) => {
+router.get("/list", jwtAuth, async (req, res) => {
   try {
-    const users = await User.find({}, "_id first_name last_name location description occupation login_name avatar");
+    const userId = req.userId;
+    
+    // Lấy danh sách friend IDs
+    const friends = await Friend.find({
+      $or: [
+        { requester: userId, status: 'accepted' },
+        { recipient: userId, status: 'accepted' }
+      ]
+    });
+
+    const friendIds = friends.map(friend => 
+      friend.requester.toString() === userId ? friend.recipient : friend.requester
+    );
+
+    // Lấy thông tin users từ friend IDs
+    const users = await User.find({ 
+      _id: { $in: friendIds } 
+    }, "_id first_name last_name location description occupation login_name avatar");
+    
     res.send(users);
   } catch (error) {
-    res.status(500).send({ error: "Không thể truy xuất người dùng" });
+    res.status(500).send({ error: "Không thể truy xuất bạn bè" });
   }
 });
 

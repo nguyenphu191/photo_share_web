@@ -2,10 +2,18 @@ import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import Comment from '../components/Comment';
 import { useNavigate } from 'react-router-dom';
+import ReactionPicker from '../components/ReactionPicker';
+import ReactionDisplay from '../components/ReactionDisplay';
+import ReactionDetailsModal from '../components/ReactionDetailsModal';
 
 const Profile = () => {
     // State lưu thông tin user từ server (có thể khác với localStorage)
     const [user, setUser] = useState(null);
+    const [reactionModal, setReactionModal] = useState({
+        isOpen: false,
+        photoId: null,
+        stats: {}
+    });
     
     // State lưu danh sách photos của user
     const [photoList, setPhotoList] = useState([]);
@@ -77,6 +85,40 @@ const Profile = () => {
             setLoading(prev => ({ ...prev, user: false }));
         }
     }, [userLogin?._id]);
+
+    // Reaction handlers
+    const handleReactionChange = useCallback((photoId, { action, reactionType, oldReactionType, stats }) => {
+        console.log('🎭 Reaction changed:', { photoId, action, reactionType, stats });
+        
+        // Cập nhật photoList với stats mới
+        setPhotoList(prevPhotos => 
+            prevPhotos.map(photo => {
+                if (photo._id === photoId) {
+                    return {
+                        ...photo,
+                        reaction_stats: stats
+                    };
+                }
+                return photo;
+            })
+        );
+    }, []);
+    
+    const handleViewReactionDetails = useCallback((photoId, reactions, stats) => {
+        setReactionModal({
+            isOpen: true,
+            photoId,
+            stats
+        });
+    }, []);
+    
+    const handleCloseReactionModal = useCallback(() => {
+        setReactionModal({
+            isOpen: false,
+            photoId: null,
+            stats: {}
+        });
+    }, []);
 
     // Hàm fetch danh sách photos của user
     const fetchPhotos = useCallback(async () => {
@@ -636,6 +678,35 @@ const Profile = () => {
                                         className="photo-image"
                                     />
 
+                                    {/* Reactions Section */}
+                                    <div className="photo-reactions-section">
+                                        <div className="photo-reaction-stats">
+                                            {photo.reaction_stats?.total > 0 && (
+                                                <ReactionDisplay
+                                                    reactions={photo.reactions || []}
+                                                    reactionStats={photo.reaction_stats || {}}
+                                                    onViewDetails={(reactions, stats) => 
+                                                        handleViewReactionDetails(photo._id, reactions, stats)
+                                                    }
+                                                />
+                                            )}
+                                        </div>
+                                        
+                                        <div className="photo-reaction-actions">
+                                            <ReactionPicker
+                                                photoId={photo._id}
+                                                currentUser={userLogin}
+                                                userReaction={photo.reactions?.find(r => 
+                                                    r.user_id === userLogin?._id
+                                                )}
+                                                onReactionChange={(changeData) => 
+                                                    handleReactionChange(photo._id, changeData)
+                                                }
+                                                disabled={!userLogin}
+                                            />
+                                        </div>
+                                    </div>
+
                                     {/* Comments Section */}
                                     <div className="comments-section">
                                         <h5 className="comments-title">Bình luận:</h5>
@@ -680,6 +751,14 @@ const Profile = () => {
                     )}
                 </div>
             </div>
+
+            {/* Reaction Details Modal */}
+            <ReactionDetailsModal
+                photoId={reactionModal.photoId}
+                isOpen={reactionModal.isOpen}
+                onClose={handleCloseReactionModal}
+                initialStats={reactionModal.stats}
+            />
         </div>
     );
 };
