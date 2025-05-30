@@ -7,6 +7,8 @@ const UserRouter = require("./routes/UserRouter.js");
 const PhotoRouter = require("./routes/PhotoRouter.js");
 const CommentsRouter = require("./routes/CommentsRouter.js");
 const path = require("path");
+const ReactionRouter = require("./routes/ReactionRouter.js");
+const FriendRouter = require("./routes/FriendRouter.js");
 
 dbConnect();
 
@@ -24,7 +26,8 @@ app.use("/api/admin", AdminRouter);
 app.use("/api/user", UserRouter);
 app.use("/api/photo", PhotoRouter);
 app.use("/api/photo/commentsOfPhoto", CommentsRouter);
-
+app.use("/api/reaction", ReactionRouter);
+app.use("/api/friend", FriendRouter);
 // Serve static files cho uploads
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 

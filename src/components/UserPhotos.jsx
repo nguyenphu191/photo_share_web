@@ -1,6 +1,10 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import axios from 'axios';
 import Comment from './Comment';
+import ReactionPicker from './ReactionPicker';
+import ReactionDisplay from './ReactionDisplay';
+import ReactionDetailsModal from './ReactionDetailsModal';
+import useReactions from '../hooks/useReactions';
 
 const UserPhotos = ({ userId, onError, onLoadingChange, currentUser }) => {
     // State lưu thông tin user được chọn
@@ -17,6 +21,13 @@ const UserPhotos = ({ userId, onError, onLoadingChange, currentUser }) => {
     
     // State quản lý comments cho từng photo
     const [newComments, setNewComments] = useState({});
+    
+    // State quản lý modal xem chi tiết reactions
+    const [reactionModal, setReactionModal] = useState({
+        isOpen: false,
+        photoId: null,
+        stats: {}
+    });
 
     // ⭐ QUAN TRỌNG: Sử dụng ref để tránh infinite loop
     const currentUserIdRef = useRef(null);
@@ -265,6 +276,40 @@ const UserPhotos = ({ userId, onError, onLoadingChange, currentUser }) => {
         }
     }, [newComments, currentUser, handleError]);
 
+    // ⭐ NEW: Reaction handlers
+    const handleReactionChange = useCallback((photoId, { action, reactionType, oldReactionType, stats }) => {
+        console.log('🎭 Reaction changed:', { photoId, action, reactionType, stats });
+        
+        // Cập nhật photoList với stats mới
+        setPhotoList(prevPhotos => 
+            prevPhotos.map(photo => {
+                if (photo._id === photoId) {
+                    return {
+                        ...photo,
+                        reaction_stats: stats
+                    };
+                }
+                return photo;
+            })
+        );
+    }, []);
+
+    const handleViewReactionDetails = useCallback((photoId, reactions, stats) => {
+        setReactionModal({
+            isOpen: true,
+            photoId,
+            stats
+        });
+    }, []);
+
+    const handleCloseReactionModal = useCallback(() => {
+        setReactionModal({
+            isOpen: false,
+            photoId: null,
+            stats: {}
+        });
+    }, []);
+
     // ⭐ Memoized utility functions
     const formatDateTime = useCallback((dateTimeString) => {
         try {
@@ -413,6 +458,35 @@ const UserPhotos = ({ userId, onError, onLoadingChange, currentUser }) => {
                                         }}
                                     />
 
+                                    {/* ⭐ NEW: Reactions Section */}
+                                    <div className="photo-reactions-section">
+                                        <div className="photo-reaction-stats">
+                                            {photo.reaction_stats?.total > 0 && (
+                                                <ReactionDisplay
+                                                    reactions={photo.reactions || []}
+                                                    reactionStats={photo.reaction_stats || {}}
+                                                    onViewDetails={(reactions, stats) => 
+                                                        handleViewReactionDetails(photo._id, reactions, stats)
+                                                    }
+                                                />
+                                            )}
+                                        </div>
+                                        
+                                        <div className="photo-reaction-actions">
+                                            <ReactionPicker
+                                                photoId={photo._id}
+                                                currentUser={currentUser}
+                                                userReaction={photo.reactions?.find(r => 
+                                                    r.user_id === currentUser?._id
+                                                )}
+                                                onReactionChange={(changeData) => 
+                                                    handleReactionChange(photo._id, changeData)
+                                                }
+                                                disabled={!currentUser}
+                                            />
+                                        </div>
+                                    </div>
+
                                     {/* Comments Section */}
                                     <div className="comments-section">
                                         <h5 className="comments-title">
@@ -479,6 +553,14 @@ const UserPhotos = ({ userId, onError, onLoadingChange, currentUser }) => {
                     </div>
                 )}
             </div>
+
+            {/* ⭐ NEW: Reaction Details Modal */}
+            <ReactionDetailsModal
+                photoId={reactionModal.photoId}
+                isOpen={reactionModal.isOpen}
+                onClose={handleCloseReactionModal}
+                initialStats={reactionModal.stats}
+            />
         </div>
     );
 };

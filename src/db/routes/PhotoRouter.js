@@ -220,7 +220,7 @@ router.get("/photosOfUser/:id", async (req, res) => {
             const user = await User.findById(comment.user_id).select(
               "_id first_name last_name",
             );
-
+    
             return {
               _id: comment._id,
               comment: comment.comment,
@@ -236,13 +236,36 @@ router.get("/photosOfUser/:id", async (req, res) => {
             };
           }),
         );
-
+    
+        // Format reactions with user info
+        const formattedReactions = await Promise.all(
+          (photo.reactions || []).map(async (reaction) => {
+            const user = await User.findById(reaction.user_id).select(
+              "_id first_name last_name avatar"
+            );
+            return {
+              _id: reaction._id,
+              type: reaction.type,
+              date_time: reaction.date_time,
+              user_id: reaction.user_id,
+              user: user ? {
+                _id: user._id,
+                first_name: user.first_name,
+                last_name: user.last_name,
+                avatar: user.avatar
+              } : null
+            };
+          })
+        );
+    
         return {
           _id: photo._id,
           user_id: photo.user_id,
           file_name: photo.file_name,
           date_time: photo.date_time,
           comments: formattedComments,
+          reactions: formattedReactions, // Thêm reactions
+          reaction_stats: photo.reaction_stats || {}, // Thêm stats
           title: photo.title,
         };
       }),
