@@ -5,6 +5,7 @@ const jwtAuth = require("../middleware/auth.js");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const Friend = require("../models/FriendModel.js"); 
 
 // Tạo thư mục uploads nếu chưa tồn tại
 const createUploadsDir = () => {
@@ -55,8 +56,6 @@ const upload = multer({
   }
 });
 
-router.post("/", async (request, response) => {});
-
 router.get("/list", jwtAuth, async (req, res) => {
   try {
     const userId = req.userId;
@@ -83,7 +82,31 @@ router.get("/list", jwtAuth, async (req, res) => {
     res.status(500).send({ error: "Không thể truy xuất bạn bè" });
   }
 });
-
+router.get("/available", jwtAuth, async (req, res) => {
+  try {
+    const userId = req.userId;
+    
+    // Lấy danh sách người dùng chưa phải bạn bè
+    const friends = await Friend.find({
+      $or: [
+        { requester: userId, status: 'accepted' },
+        { recipient: userId, status: 'accepted' }
+      ]
+    });
+    const friendIds = friends.map(friend => 
+      friend.requester.toString() === userId ? friend.recipient : friend.requester
+    );
+    // Tìm tất cả người dùng trừ người dùng hiện tại và bạn bè
+    const users = await User.find({
+      _id: { $ne: userId, $nin: friendIds }
+    }, "_id first_name last_name location description occupation login_name avatar");
+    res.send(users);
+    
+    
+  } catch (error) {
+    res.status(500).send({ error: "Không thể truy xuất người dùng" });
+  }
+});
 router.get("/:id", async (req, res) => {
   try {
     const user = await User.findById(
@@ -168,39 +191,5 @@ router.post('/upload-avatar', jwtAuth, upload.single('avatar'), async (req, res)
   }
 });
 
-router.get("/available", jwtAuth, async (req, res) => {
-  try {
-    const userId = req.userId;
-    
-    // Lấy danh sách friend IDs và pending requests
-    const friends = await Friend.find({
-      $or: [
-        { requester: userId },
-        { recipient: userId }
-      ]
-    });
 
-    const excludeIds = [userId]; // Exclude self
-    
-    // Add all friends and pending requests to exclude list
-    friends.forEach(friend => {
-      if (friend.requester.toString() !== userId) {
-        excludeIds.push(friend.requester);
-      }
-      if (friend.recipient.toString() !== userId) {
-        excludeIds.push(friend.recipient);
-      }
-    });
-
-    // Lấy users không nằm trong exclude list
-    const availableUsers = await User.find({ 
-      _id: { $nin: excludeIds } 
-    }, "_id first_name last_name location description occupation login_name avatar");
-    
-    res.send(availableUsers);
-  } catch (error) {
-    console.error('Error fetching available users:', error);
-    res.status(500).send({ error: "Không thể truy xuất người dùng" });
-  }
-});
 module.exports = router;

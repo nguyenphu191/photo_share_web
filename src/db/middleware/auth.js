@@ -19,7 +19,7 @@ const jwtAuth = (req, res, next) => {
     if (!token) {
       return res.status(401).json({ error: 'Access denied. Invalid token format.' });
     }
-
+    console.log('Received token:', token); // Debug log
     // Verify token
     const decoded = jwt.verify(token, JWT_SECRET);
     

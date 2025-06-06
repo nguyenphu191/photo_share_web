@@ -1,7 +1,3 @@
-// =====================================================
-// 2. TẠO TRANG ADD FRIENDS - src/pages/AddFriends.jsx
-// =====================================================
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -17,11 +13,13 @@ const AddFriends = () => {
         requests: true,
         sendingRequest: {}
     });
-    const [error, setError] = useState('');
+    // ⭐ TÁCH RIÊNG error và status để phân biệt rõ ràng
+    const [error, setError] = useState(''); // Chỉ cho lỗi thực sự
+    const [fetchStatus, setFetchStatus] = useState('loading'); // 'loading', 'success', 'error', 'empty'
     const [searchTerm, setSearchTerm] = useState('');
     const [showQR, setShowQR] = useState(false);
     const [showScanner, setShowScanner] = useState(false);
-    const [activeTab, setActiveTab] = useState('discover'); // discover, requests, share
+    const [activeTab, setActiveTab] = useState('discover');
 
     const navigate = useNavigate();
 
@@ -30,16 +28,25 @@ const AddFriends = () => {
         const getUserFromStorage = () => {
             try {
                 const userString = localStorage.getItem('user');
-                if (userString) {
+                const token = localStorage.getItem('token');
+                
+                console.log('🔍 Auth check:', { 
+                    hasUser: !!userString, 
+                    hasToken: !!token 
+                });
+                
+                if (userString && token) {
                     const user = JSON.parse(userString);
                     setCurrentUser(user);
+                    console.log('✅ User logged in:', user.first_name, user.last_name);
                     return user;
                 } else {
+                    console.log('❌ No auth data');
                     navigate('/login');
                     return null;
                 }
             } catch (error) {
-                console.error('Error parsing user:', error);
+                console.error('❌ Auth parse error:', error);
                 navigate('/login');
                 return null;
             }
@@ -52,42 +59,97 @@ const AddFriends = () => {
         }
     }, [navigate]);
 
-    // Fetch available users (excluding friends and self)
+    // ⭐ IMPROVED: Fetch với logic phân biệt rõ ràng
     const fetchAvailableUsers = useCallback(async () => {
         try {
+            console.log('📡 Starting fetch available users...');
             setLoading(prev => ({ ...prev, users: true }));
-            setError('');
+            setError(''); // Clear previous errors
+            setFetchStatus('loading');
 
             const token = localStorage.getItem('token');
             if (!token) {
+                console.log('❌ No token found');
+                setError('Phiên đăng nhập đã hết hạn');
+                setFetchStatus('error');
                 navigate('/login');
                 return;
             }
 
-            console.log('🔍 Fetching available users...');
-
+            console.log('📡 Making API call to /api/user/available...');
+            
             const response = await axios.get('http://localhost:8000/api/user/available', {
                 headers: { 
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: 10000
+                timeout: 15000 // Tăng timeout lên 15s
             });
 
-            console.log('📋 Available users response:', response.data);
-            setUsers(response.data || []);
+            console.log('✅ API Response received:', {
+                status: response.status,
+                dataType: typeof response.data,
+                isArray: Array.isArray(response.data),
+                length: response.data?.length || 0,
+                data: response.data
+            });
 
-        } catch (error) {
-            console.error('❌ Error fetching users:', error);
-            
-            if (error.response?.status === 401) {
-                localStorage.removeItem('user');
-                localStorage.removeItem('token');
-                navigate('/login');
+            // ⭐ XỬ LÝ RESPONSE: Phân biệt empty vs error
+            if (response.status === 200) {
+                const userData = response.data || [];
+                setUsers(userData);
+                
+                if (userData.length === 0) {
+                    console.log('ℹ️ No available users (normal case)');
+                    setFetchStatus('empty'); // Không có users - bình thường
+                    setError(''); // Không phải lỗi
+                } else {
+                    console.log(`✅ Found ${userData.length} available users`);
+                    setFetchStatus('success');
+                    setError('');
+                }
             } else {
-                setError('Không thể tải danh sách người dùng');
+                console.log('⚠️ Unexpected status:', response.status);
+                setError('Phản hồi từ server không hợp lệ');
+                setFetchStatus('error');
                 setUsers([]);
             }
+
+        } catch (error) {
+            console.error('❌ Fetch error details:', {
+                message: error.message,
+                code: error.code,
+                status: error.response?.status,
+                data: error.response?.data
+            });
+            
+            // ⭐ XỬ LÝ CÁC LOẠI LỖI CỤ THỂ
+            let errorMessage = '';
+            
+            if (error.response?.status === 401) {
+                errorMessage = 'Phiên đăng nhập đã hết hạn. Đang chuyển về trang đăng nhập...';
+                localStorage.removeItem('user');
+                localStorage.removeItem('token');
+                setTimeout(() => navigate('/login'), 2000);
+            } else if (error.response?.status === 403) {
+                errorMessage = 'Không có quyền truy cập';
+            } else if (error.response?.status === 404) {
+                errorMessage = 'API endpoint không tồn tại';
+            } else if (error.response?.status === 500) {
+                errorMessage = `Lỗi máy chủ: ${error.response?.data?.error || 'Lỗi server nội bộ'}`;
+            } else if (error.code === 'ECONNABORTED') {
+                errorMessage = 'Kết nối timeout. Vui lòng kiểm tra internet và thử lại';
+            } else if (error.code === 'ECONNREFUSED') {
+                errorMessage = 'Không thể kết nối tới server. Vui lòng kiểm tra server có đang chạy không';
+            } else if (error.code === 'NETWORK_ERROR' || !error.response) {
+                errorMessage = 'Lỗi kết nối mạng. Vui lòng kiểm tra internet';
+            } else {
+                errorMessage = `Lỗi không xác định: ${error.message}`;
+            }
+            
+            setError(errorMessage);
+            setFetchStatus('error');
+            setUsers([]);
         } finally {
             setLoading(prev => ({ ...prev, users: false }));
         }
@@ -101,15 +163,19 @@ const AddFriends = () => {
             const token = localStorage.getItem('token');
             if (!token) return;
 
+            console.log('📩 Fetching friend requests...');
+
             const response = await axios.get('http://localhost:8000/api/friend/requests', {
                 headers: { Authorization: `Bearer ${token}` },
-                timeout: 5000
+                timeout: 10000
             });
 
+            console.log('📩 Friend requests response:', response.data?.length || 0);
             setFriendRequests(response.data || []);
 
         } catch (error) {
             console.error('Error fetching requests:', error);
+            // Friend requests không critical, không cần show error to user
         } finally {
             setLoading(prev => ({ ...prev, requests: false }));
         }
@@ -216,6 +282,15 @@ const AddFriends = () => {
         return '/images/default.jpg';
     }, []);
 
+    // Manual refresh function
+    const handleRefresh = useCallback(() => {
+        console.log('🔄 Manual refresh triggered');
+        setError('');
+        setFetchStatus('loading');
+        fetchAvailableUsers();
+        fetchFriendRequests();
+    }, [fetchAvailableUsers, fetchFriendRequests]);
+
     if (!currentUser) {
         return (
             <div className="loading-container">
@@ -252,11 +327,19 @@ const AddFriends = () => {
                     >
                         📷
                     </button>
+                    <button 
+                        className="refresh-btn"
+                        onClick={handleRefresh}
+                        title="Làm mới"
+                        disabled={loading.users}
+                    >
+                        {loading.users ? '⏳' : '🔄'}
+                    </button>
                 </div>
             </div>
 
-            {/* Error Banner */}
-            {error && (
+            {/* ⭐ CHỈ HIỂN THỊ ERROR KHI THỰC SỰ CÓ LỖI */}
+            {error && fetchStatus === 'error' && (
                 <div className="error-banner">
                     <span>{error}</span>
                     <button onClick={() => setError('')}>✕</button>
@@ -303,24 +386,53 @@ const AddFriends = () => {
                             </div>
                         </div>
 
-                        {/* Users List */}
-                        {loading.users ? (
+                        {/* ⭐ LOGIC HIỂN THỊ MỚI: Phân biệt loading, error, empty, success */}
+                        {fetchStatus === 'loading' || loading.users ? (
+                            /* Loading State */
                             <div className="loading-users">
                                 <div className="loading-spinner"></div>
                                 <p>Đang tìm kiếm người dùng...</p>
                             </div>
-                        ) : filteredUsers().length === 0 ? (
+                        ) : fetchStatus === 'error' ? (
+                            /* Error State - CHỈ hiển thị khi có lỗi thực sự */
+                            <div className="empty-users">
+                                <div className="empty-icon">❌</div>
+                                <h3>Có lỗi xảy ra</h3>
+                                <p>{error}</p>
+                                <button 
+                                    className="retry-btn"
+                                    onClick={handleRefresh}
+                                >
+                                    🔄 Thử lại
+                                </button>
+                            </div>
+                        ) : fetchStatus === 'empty' || filteredUsers().length === 0 ? (
+                            /* Empty State - Không có users hoặc search không ra kết quả */
                             <div className="empty-users">
                                 <div className="empty-icon">👥</div>
-                                <h3>Không tìm thấy ai</h3>
+                                <h3>
+                                    {searchTerm ? 
+                                        'Không tìm thấy ai' : 
+                                        'Không có người dùng có thể kết bạn'
+                                    }
+                                </h3>
                                 <p>
                                     {searchTerm ? 
                                         'Thử tìm kiếm với từ khóa khác' : 
-                                        'Bạn đã kết bạn với tất cả mọi người!'
+                                        'Bạn đã kết bạn với tất cả mọi người hoặc chưa có ai đăng ký thêm!'
                                     }
                                 </p>
+                                {!searchTerm && (
+                                    <button 
+                                        className="retry-btn"
+                                        onClick={handleRefresh}
+                                    >
+                                        🔄 Làm mới
+                                    </button>
+                                )}
                             </div>
                         ) : (
+                            /* Success State - Có users để hiển thị */
                             <div className="users-grid">
                                 {filteredUsers().map(user => (
                                     <div key={user._id} className="user-card">
@@ -346,7 +458,7 @@ const AddFriends = () => {
                                             onClick={() => sendFriendRequest(user._id)}
                                             disabled={loading.sendingRequest[user._id]}
                                         >
-                                            {loading.sendingRequest[user._id] ? '...' : '👥 Kết bạn'}
+                                            {loading.sendingRequest[user._id] ? '⏳ Đang gửi...' : '👥 Kết bạn'}
                                         </button>
                                     </div>
                                 ))}
