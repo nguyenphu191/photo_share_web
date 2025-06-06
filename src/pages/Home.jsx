@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import TopBar from "../components/TopBar";
 import UserList from "../components/UserList";
 import UserPhotos from "../components/UserPhotos";
 

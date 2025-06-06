@@ -726,12 +726,17 @@ body {
 }
 
 .form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 15px;
-    margin-bottom: 20px;
+    display: flex;
+    flex-wrap: wrap; /* Cho phép xuống dòng trên màn hình nhỏ */
+    gap: 1rem; /* Khoảng cách giữa hai form-group */
+    width: 100%; /* Đảm bảo chiếm toàn bộ chiều rộng */
 }
 
+.form-group {
+    flex: 1; /* Mỗi form-group chiếm không gian đều nhau */
+    min-width: 0; /* Ngăn tràn khi flexbox co lại */
+    max-width: 100%; /* Giới hạn chiều rộng */
+}
 .form-textarea {
     flex: 1;
     background: none;
@@ -4732,7 +4737,7 @@ RESPONSIVE AVATAR STYLES
 .add-friends-page {
     min-height: 100vh;
     background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-    padding-top: 80px; /* Account for TopBar */
+    padding-top: 0px; /* Account for TopBar */
 }
 
 /* Header */
@@ -4744,7 +4749,7 @@ RESPONSIVE AVATAR STYLES
     background: white;
     box-shadow: 0 2px 10px rgba(0,0,0,0.1);
     position: sticky;
-    top: 80px;
+    top: 0px;
     z-index: 10;
 }
 
@@ -4804,7 +4809,7 @@ RESPONSIVE AVATAR STYLES
     background: white;
     border-bottom: 1px solid #eee;
     position: sticky;
-    top: 140px;
+    top: 60px;
     z-index: 9;
 }
 
